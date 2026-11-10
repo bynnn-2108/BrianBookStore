@@ -1,0 +1,129 @@
+<?php
+/** Detail satu buku: mengambil metadata, stok, dan menyediakan aksi keranjang. */
+require_once __DIR__ . '/includes/functions.php';
+
+$bookId = (int) ($_GET['id'] ?? 0);
+
+$stmt = $pdo->prepare(
+    'SELECT b.*, k.nama_kategori
+     FROM buku b
+     JOIN kategori k ON k.id_kategori = b.id_kategori
+     WHERE b.id_buku = ?'
+);
+$stmt->execute([$bookId]);
+$book = $stmt->fetch();
+
+if (!$book) {
+    http_response_code(404);
+    $page_title = 'Buku Tidak Ditemukan';
+
+    require __DIR__ . '/includes/header.php';
+    ?>
+    <div class="empty">
+      <span class="icon">📖</span>
+      <h2>Buku tidak ditemukan.</h2>
+      <a class="button" href="<?= url('buku.php') ?>">Kembali ke koleksi</a>
+    </div>
+    <?php
+    require __DIR__ . '/includes/footer.php';
+    exit;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    require_user();
+    verify_csrf();
+
+    $amount = max(1, (int) ($_POST['jumlah'] ?? 1));
+
+    if ($book['stok'] < 1) {
+        set_flash('danger', 'Maaf, stok buku ini habis.');
+    } else {
+        $existing = $pdo->prepare(
+            'SELECT jumlah
+             FROM cart
+             WHERE id_user = ? AND id_buku = ?'
+        );
+        $existing->execute([$_SESSION['user_id'], $bookId]);
+        $current = (int) ($existing->fetchColumn() ?: 0);
+        $newQuantity = min($current + $amount, (int) $book['stok']);
+
+        if ($current) {
+            $update = $pdo->prepare(
+                'UPDATE cart
+                 SET jumlah = ?
+                 WHERE id_user = ? AND id_buku = ?'
+            );
+            $update->execute([$newQuantity, $_SESSION['user_id'], $bookId]);
+        } else {
+            $insert = $pdo->prepare(
+                'INSERT INTO cart (id_user, id_buku, jumlah)
+                 VALUES (?, ?, ?)'
+            );
+            $insert->execute([$_SESSION['user_id'], $bookId, $newQuantity]);
+        }
+
+        set_flash('success', 'Buku ditambahkan ke keranjang.');
+        redirect('cart.php');
+    }
+}
+
+$page_title = $book['judul_buku'];
+$bookCover = book_cover_path($book);
+
+require __DIR__ . '/includes/header.php';
+?>
+<div class="detail-layout">
+  <div class="detail-cover">
+    <?php if ($bookCover): ?>
+      <img src="<?= url($bookCover) ?>" alt="<?= e($book['judul_buku']) ?>">
+    <?php else: ?>
+      <div class="fake-cover"><?= e($book['judul_buku']) ?></div>
+    <?php endif; ?>
+  </div>
+
+  <section>
+    <div class="eyebrow"><?= e($book['nama_kategori']) ?></div>
+    <h1><?= e($book['judul_buku']) ?></h1>
+    <p class="author">oleh <?= e($book['penulis']) ?></p>
+    <div class="price" style="font-size:25px"><?= rupiah($book['harga']) ?></div>
+
+    <div class="book-meta">
+      <span>Penulis</span>
+      <b><?= e($book['penulis']) ?></b>
+      <span>Penerbit</span>
+      <b><?= e($book['penerbit']) ?></b>
+      <span>Tahun terbit</span>
+      <b><?= e($book['tahun_terbit']) ?></b>
+      <span>Ketersediaan</span>
+      <b>
+        <?= $book['stok'] > 0 ? 'Stok tersedia (' . $book['stok'] . ')' : 'Stok habis' ?>
+      </b>
+    </div>
+
+    <h3>Sinopsis</h3>
+    <p><?= nl2br(e($book['deskripsi'])) ?></p>
+
+    <?php if ($book['stok'] > 0): ?>
+      <form method="post" style="display:flex;gap:11px;align-items:end;margin-top:22px">
+        <?= csrf_field() ?>
+        <div>
+          <label for="jumlah">Jumlah</label>
+          <input
+            class="qty-control"
+            id="jumlah"
+            type="number"
+            min="1"
+            max="<?= $book['stok'] ?>"
+            name="jumlah"
+            value="1"
+          >
+        </div>
+        <button type="submit">+ Masukkan Keranjang</button>
+      </form>
+    <?php else: ?>
+      <button disabled>Stok Habis</button>
+    <?php endif; ?>
+  </section>
+</div>
+
+<?php require __DIR__ . '/includes/footer.php'; ?>
