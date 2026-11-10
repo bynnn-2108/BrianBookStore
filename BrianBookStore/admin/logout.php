@@ -1,9 +1,0 @@
-<?php
-/** Mengakhiri session admin dan kembali ke halaman login panel. */
-require_once __DIR__ . '/../includes/functions.php';
-
-unset($_SESSION['admin_id'], $_SESSION['admin_nama']);
-
-set_flash('success', 'Anda sudah keluar dari panel admin.');
-
-redirect('admin/login.php');
